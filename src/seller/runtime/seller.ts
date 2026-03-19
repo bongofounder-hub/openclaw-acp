@@ -8,7 +8,7 @@
 // =============================================================================
 
 import { connectAcpSocket } from "./acpSocket.js";
-import { acceptOrRejectJob, requestPayment, deliverJob } from "./sellerApi.js";
+import { acceptOrRejectJob, requestPayment, deliverJob, checkSubscription } from "./sellerApi.js";
 import { loadOffering, listOfferings } from "./offerings.js";
 import { AcpJobPhase, type AcpJobEventData } from "./types.js";
 import type { ExecuteJobResult } from "./offeringTypes.js";
@@ -74,6 +74,16 @@ function resolveServiceRequirements(data: AcpJobEventData): Record<string, any> 
     }
   }
   return {};
+}
+
+function isSubscriptionJob(data: AcpJobEventData): boolean {
+  const negotiationMemo = data.memos.find((m) => m.nextPhase === AcpJobPhase.NEGOTIATION);
+  if (!negotiationMemo) return false;
+  try {
+    return JSON.parse(negotiationMemo.content).priceType === "subscription";
+  } catch {
+    return false;
+  }
 }
 
 async function handleNewTask(data: AcpJobEventData): Promise<void> {
@@ -143,6 +153,7 @@ async function handleNewTask(data: AcpJobEventData): Promise<void> {
         reason: "Job accepted",
       });
 
+      // Run normal payment flow for all jobs
       const funds =
         config.requiredFunds && handlers.requestAdditionalFunds
           ? await handlers.requestAdditionalFunds(requirements)
@@ -152,8 +163,28 @@ async function handleNewTask(data: AcpJobEventData): Promise<void> {
         ? await handlers.requestPayment(requirements)
         : (funds?.content ?? "Request accepted");
 
+      // For subscription jobs, check status and append to content
+      let content = paymentReason;
+      if (isSubscriptionJob(data)) {
+        const subCheck = await checkSubscription(
+          data.clientAddress,
+          data.providerAddress,
+          offeringName
+        );
+
+        if (subCheck.needsSubscriptionPayment && subCheck.tier) {
+          console.log(
+            `[seller] Job ${jobId} requires subscription payment for tier "${subCheck.tier.name}"`
+          );
+          content = `${paymentReason}\nSubscription required: ${subCheck.tier.name} (${subCheck.tier.price} USDC for ${subCheck.tier.duration} days)`;
+        } else {
+          console.log(`[seller] Job ${jobId} — valid subscription, proceeding`);
+          content = `${paymentReason}\nSubscription active`;
+        }
+      }
+
       await requestPayment(jobId, {
-        content: paymentReason,
+        content,
         payableDetail: funds
           ? {
               amount: funds.amount,

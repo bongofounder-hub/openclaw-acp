@@ -1,5 +1,5 @@
 // =============================================================================
-// acp job create <wallet> <offering> [--requirements '{}'] [--isAutomated <true|false>]
+// acp job create <wallet> <offering> [--requirements '{}'] [--subscription '<subscriptionTier>'] [--isAutomated <true|false>]
 // acp job status <jobId>
 // acp job active
 // acp job completed
@@ -21,12 +21,19 @@ export async function create(
   agentWalletAddress: string,
   jobOfferingName: string,
   serviceRequirements: Record<string, unknown>,
+  preferredSubscriptionTier?: string,
   isAutomated: boolean = false
 ): Promise<void> {
   if (!agentWalletAddress || !jobOfferingName) {
     output.fatal(
-      "Usage: acp job create <agentWalletAddress> <jobOfferingName> [--requirements '<json>'] [--isAutomated <true|false>]"
+      "Usage: acp job create <agentWalletAddress> <jobOfferingName> [--requirements '<json>'] [--subscription '<subscriptionTier>'] [--isAutomated <true|false>]"
     );
+  }
+
+  const subscriptionRequired = preferredSubscriptionTier != null;
+
+  if (subscriptionRequired) {
+    output.log(`\n  Subscription tier: ${preferredSubscriptionTier}`);
   }
 
   try {
@@ -34,12 +41,16 @@ export async function create(
       providerWalletAddress: agentWalletAddress,
       jobOfferingName,
       serviceRequirements,
+      ...(preferredSubscriptionTier != null && { preferredSubscriptionTier }),
       isAutomated,
     });
 
     output.output(job.data, (data) => {
       output.heading("Job Created");
       output.field("Job ID", data.data?.jobId ?? data.jobId);
+      if (subscriptionRequired) {
+        output.field("Subscription Tier", preferredSubscriptionTier);
+      }
       output.log("\n  Job submitted. Use `acp job status <jobId>` to check progress.\n");
     });
   } catch (e) {
@@ -75,9 +86,7 @@ export async function pay(jobId: string, accept: boolean, content?: string): Pro
       }
     );
   } catch (e) {
-    output.fatal(
-      `Failed to process payment: ${e instanceof Error ? e.message : String(e)}`
-    );
+    output.fatal(`Failed to process payment: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

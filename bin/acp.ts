@@ -112,6 +112,7 @@ function buildHelp(): string {
     "",
     cmd("job create <wallet> <offering>", "Start a job with an agent"),
     flag("--requirements '<json>'", "Service requirements (JSON)"),
+    flag("--subscription '<tierName>'", "Preferred subscription tier"),
     flag("--isAutomated <true|false>", "Payment review (default: false). Set true to auto-pay"),
     cmd("job status <job-id>", "Check job status"),
     cmd("job pay <job-id>", "Accept or reject payment for a job"),
@@ -141,6 +142,10 @@ function buildHelp(): string {
     cmd("sell delete <offering-name>", "Delist offering from ACP"),
     cmd("sell list", "Show all offerings with status"),
     cmd("sell inspect <offering-name>", "Detailed view of an offering"),
+    "",
+    cmd("sell sub list", "List subscription tiers"),
+    cmd("sell sub create <name> <price> <dur>", "Create a subscription tier"),
+    cmd("sell sub delete <name>", "Delete a subscription tier"),
     "",
     cmd("sell resource init <resource-name>", "Scaffold a new resource"),
     cmd("sell resource create <resource-name>", "Register resource on ACP"),
@@ -272,6 +277,7 @@ function buildCommandHelp(command: string): string | undefined {
         "",
         cmd("create <wallet> <offering>", "Start a job with an agent"),
         flag("--requirements '<json>'", "Service requirements (JSON)"),
+        flag("--subscription '<tierName>'", "Preferred subscription tier"),
         flag("--isAutomated <true|false>", "Payment review (default: false). Set true to auto-pay"),
         `    ${dim(
           'Example: acp job create 0x1234 "Execute Trade" --requirements \'{"pair":"ETH/USDC"}\''
@@ -364,6 +370,11 @@ function buildCommandHelp(command: string): string | undefined {
         cmd("delete <offering-name>", "Delist offering from ACP"),
         cmd("list", "Show all offerings with status"),
         cmd("inspect <offering-name>", "Detailed view of an offering"),
+        "",
+        cmd("sub list", "List subscription tiers"),
+        cmd("sub create <name> <price> <duration>", "Create a subscription tier"),
+        `    ${dim("Example: acp sell sub create premium 10 30  (10 USDC for 30 days)")}`,
+        cmd("sub delete <name>", "Delete a subscription tier"),
         "",
         cmd("resource init <resource-name>", "Scaffold a new resource"),
         cmd("resource create <resource-name>", "Register resource on ACP"),
@@ -607,7 +618,9 @@ async function main(): Promise<void> {
         const offering = rest[1];
         let remaining = rest.slice(2);
         const reqJson = getFlagValue(remaining, "--requirements");
+        const subscriptionTier = getFlagValue(remaining, "--subscription") ?? undefined;
         remaining = removeFlagWithValue(remaining, "--requirements");
+        remaining = removeFlagWithValue(remaining, "--subscription");
 
         const isAutomatedStr = getFlagValue(remaining, "--isAutomated");
         remaining = removeFlagWithValue(remaining, "--isAutomated");
@@ -621,7 +634,6 @@ async function main(): Promise<void> {
             process.exit(1);
           }
         }
-
         let isAutomated = false;
         if (typeof isAutomatedStr === "string") {
           const lowered = isAutomatedStr.toLowerCase();
@@ -635,7 +647,7 @@ async function main(): Promise<void> {
           }
         }
 
-        return job.create(walletAddr, offering, requirements, isAutomated);
+        return job.create(walletAddr, offering, requirements, subscriptionTier, isAutomated);
       }
       if (subcommand === "status") {
         return job.status(rest[0]);
@@ -769,6 +781,20 @@ async function main(): Promise<void> {
 
     case "sell": {
       const sell = await import("../src/commands/sell.js");
+      if (subcommand === "sub") {
+        const sub = await import("../src/commands/subscription.js");
+        const subSubcommand = rest[0];
+        if (subSubcommand === "list") return sub.list();
+        if (subSubcommand === "create") {
+          const name = rest[1];
+          const price = rest[2] != null ? Number(rest[2]) : undefined;
+          const duration = rest[3] != null ? Number(rest[3]) : undefined;
+          return sub.create(name, price, duration);
+        }
+        if (subSubcommand === "delete") return sub.del(rest[1]);
+        console.log(buildCommandHelp("sell"));
+        return;
+      }
       if (subcommand === "resource") {
         const resourceSubcommand = rest[0];
         if (resourceSubcommand === "init") return sell.resourceInit(rest[1]);

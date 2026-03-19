@@ -55,6 +55,13 @@ export async function requireActiveAgent(): Promise<ActiveAgentInfo> {
   process.exit(1);
 }
 
+export interface SubscriptionTier {
+  id: number;
+  name: string;
+  price: number;
+  duration: number;
+}
+
 export async function getMyAgentInfo(): Promise<{
   name: string;
   description: string;
@@ -75,6 +82,7 @@ export async function getMyAgentInfo(): Promise<{
     deliverable: string;
     requirement: Record<string, any>;
   }[];
+  subscriptions: SubscriptionTier[];
 }> {
   const agent = await client.get("/acp/me");
   return agent.data.data;
